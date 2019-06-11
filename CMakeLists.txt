@@ -39,7 +39,6 @@ set( strophe_SRCS
 	src/sock.c src/sock.h
 	src/tls.h
 	src/stanza.c
-	src/thread.c
 	src/tls_openssl.c
 	src/util.c src/util.h
 	src/uuid.c
