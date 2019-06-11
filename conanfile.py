@@ -9,7 +9,7 @@ class LibStropheConan(ConanFile):
     url = "http://strophe.im/libstrophe"
     settings = "os", "compiler", "build_type", "arch"
     generators = "cmake"
-    requires = "expat/2.2.0@fmiguelgarcia/stable"
+    requires = "expat/2.2.0@dmious/stable", "OpenSSL/1.1.1c@conan/stable"
     exports_sources = "CMakeLists.txt", "src/*", "tests/*", "examples/*", "*.h"
     options = { "with_tests": [True, False], "with_examples": [True, False]}
     default_options = "with_tests=False", "with_examples=False"
@@ -26,4 +26,4 @@ class LibStropheConan(ConanFile):
         self.copy( pattern="**/libstrophe.*", src="build", dst="lib/", keep_path=False, symlinks=True)
 
     def package_info(self):
-        self.cpp_info.libs.extend(["strophe", "resolv"])
+        self.cpp_info.libs.extend(["strophe"])
