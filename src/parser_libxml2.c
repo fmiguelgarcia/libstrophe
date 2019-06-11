@@ -116,11 +116,12 @@ static void _start_element(void *userdata,
 
     if (parser->depth == 0) {
         /* notify the owner */
-        if (parser->startcb)
+        if (parser->startcb) {
             cbattrs = _convert_attrs(parser, nattrs, attrs);
             parser->startcb((char *)name, cbattrs, 
                             parser->userdata);
             _free_cbattrs(parser, cbattrs);
+	}
     } else {
 	/* build stanzas at depth 1 */
 	if (!parser->stanza && parser->depth != 1) {
@@ -248,6 +249,8 @@ void parser_free(parser_t *parser)
 {
     if (parser->xmlctx)
         xmlFreeParserCtxt(parser->xmlctx);
+    if (parser->stanza)
+        xmpp_stanza_release(parser->stanza);
     xmpp_free(parser->ctx, parser);
 }
 
@@ -256,28 +259,22 @@ int parser_reset(parser_t *parser)
 {
     if (parser->xmlctx)
         xmlFreeParserCtxt(parser->xmlctx);
-
     if (parser->stanza) 
 	xmpp_stanza_release(parser->stanza);
 
+    parser->stanza = NULL;
+    parser->depth = 0;
+
     parser->xmlctx = xmlCreatePushParserCtxt(&parser->handlers, 
                                              parser, NULL, 0, NULL);
-    if (!parser->xmlctx) return 0;
 
-    parser->depth = 0;
-    parser->stanza = NULL;
-
-    return 1;
+    return parser->xmlctx ? 1 : 0;
 }
 
 /* feed a chunk of data to the parser */
 int parser_feed(parser_t *parser, char *chunk, int len)
 {
-     /* xmlParseChunk API returns 0 on success which is opposite logic to
+    /* xmlParseChunk API returns 0 on success which is opposite logic to
        the status returned by parser_feed */
-    if(!xmlParseChunk(parser->xmlctx, chunk, len, 0)) {
-        return 1;
-    } else {
-        return 0;
-    }
+    return !xmlParseChunk(parser->xmlctx, chunk, len, 0);
 }

@@ -73,6 +73,15 @@ static int _conn_connect(xmpp_conn_t * const conn,
                          xmpp_conn_handler callback,
                          void * const userdata);
 
+void xmpp_send_error(xmpp_conn_t * const conn, xmpp_error_type_t const type, char * const text)
+{
+    xmpp_stanza_t *error = xmpp_error_new(conn->ctx, type, text);
+
+    xmpp_send(conn, error);
+
+    xmpp_stanza_release(error);
+}
+
 /** Create a new Strophe connection object.
  *
  *  @param ctx a Strophe context object
@@ -128,6 +137,7 @@ xmpp_conn_t *xmpp_conn_new(xmpp_ctx_t * const ctx)
         conn->tls_disabled = 0;
         conn->tls_mandatory = 0;
         conn->tls_legacy_ssl = 0;
+        conn->tls_trust = 0;
         conn->tls_failed = 0;
         conn->sasl_support = 0;
         conn->secured = 0;
@@ -264,6 +274,8 @@ int xmpp_conn_release(xmpp_conn_t * const conn)
             }
         }
 
+        _conn_reset(conn);
+
         /* free handler stuff
          * note that userdata is the responsibility of the client
          * and the handler pointers don't need to be freed since they
@@ -305,7 +317,6 @@ int xmpp_conn_release(xmpp_conn_t * const conn)
         }
 
         parser_free(conn->parser);
-        _conn_reset(conn);
 
         if (conn->jid) xmpp_free(ctx, conn->jid);
         if (conn->pass) xmpp_free(ctx, conn->pass);
@@ -702,7 +713,7 @@ void conn_parser_reset(xmpp_conn_t * const conn)
 /** Initiate termination of the connection to the XMPP server.
  *  This function starts the disconnection sequence by sending
  *  </stream:stream> to the XMPP server.  This function will do nothing
- *  if the connection state is CONNECTING or CONNECTED.
+ *  if the connection state is different from CONNECTING or CONNECTED.
  *
  *  @param conn a Strophe connection object
  *
@@ -833,10 +844,9 @@ void xmpp_send(xmpp_conn_t * const conn,
 {
     char *buf;
     size_t len;
-    int ret;
 
     if (conn->state == XMPP_STATE_CONNECTED) {
-        if ((ret = xmpp_stanza_to_text(stanza, &buf, &len)) == 0) {
+        if (xmpp_stanza_to_text(stanza, &buf, &len) == 0) {
             xmpp_send_raw(conn, buf, len);
             xmpp_debug(conn->ctx, "conn", "SENT: %s", buf);
             xmpp_free(conn->ctx, buf);
@@ -874,7 +884,7 @@ int conn_tls_start(xmpp_conn_t * const conn)
         conn->tls = NULL;
         rc = XMPP_EINVOP;
     } else {
-        conn->tls = tls_new(conn->ctx, conn->sock);
+        conn->tls = tls_new(conn);
         rc = conn->tls == NULL ? XMPP_EMEM : 0;
     }
 
@@ -910,7 +920,8 @@ long xmpp_conn_get_flags(const xmpp_conn_t * const conn)
 
     flags = XMPP_CONN_FLAG_DISABLE_TLS * conn->tls_disabled |
             XMPP_CONN_FLAG_MANDATORY_TLS * conn->tls_mandatory |
-            XMPP_CONN_FLAG_LEGACY_SSL * conn->tls_legacy_ssl;
+            XMPP_CONN_FLAG_LEGACY_SSL * conn->tls_legacy_ssl |
+            XMPP_CONN_FLAG_TRUST_TLS * conn->tls_trust;
 
     return flags;
 }
@@ -927,6 +938,7 @@ long xmpp_conn_get_flags(const xmpp_conn_t * const conn)
  *    - XMPP_CONN_FLAG_DISABLE_TLS
  *    - XMPP_CONN_FLAG_MANDATORY_TLS
  *    - XMPP_CONN_FLAG_LEGACY_SSL
+ *    - XMPP_CONN_FLAG_TRUST_TLS
  *
  *  @param conn a Strophe connection object
  *  @param flags ORed connection flags
@@ -943,7 +955,8 @@ int xmpp_conn_set_flags(xmpp_conn_t * const conn, long flags)
         return XMPP_EINVOP;
     }
     if (flags & XMPP_CONN_FLAG_DISABLE_TLS &&
-        flags & (XMPP_CONN_FLAG_MANDATORY_TLS | XMPP_CONN_FLAG_LEGACY_SSL)) {
+        flags & (XMPP_CONN_FLAG_MANDATORY_TLS | XMPP_CONN_FLAG_LEGACY_SSL |
+                 XMPP_CONN_FLAG_TRUST_TLS)) {
         xmpp_error(conn->ctx, "conn", "Flags 0x%04lx conflict", flags);
         return XMPP_EINVOP;
     }
@@ -951,6 +964,7 @@ int xmpp_conn_set_flags(xmpp_conn_t * const conn, long flags)
     conn->tls_disabled = (flags & XMPP_CONN_FLAG_DISABLE_TLS) ? 1 : 0;
     conn->tls_mandatory = (flags & XMPP_CONN_FLAG_MANDATORY_TLS) ? 1 : 0;
     conn->tls_legacy_ssl = (flags & XMPP_CONN_FLAG_LEGACY_SSL) ? 1 : 0;
+    conn->tls_trust = (flags & XMPP_CONN_FLAG_TRUST_TLS) ? 1 : 0;
 
     return 0;
 }
@@ -1196,6 +1210,9 @@ static void _conn_reset(xmpp_conn_t * const conn)
         xmpp_free(ctx, tsq->data);
         xmpp_free(ctx, tsq);
     }
+    conn->send_queue_head = NULL;
+    conn->send_queue_tail = NULL;
+    conn->send_queue_len = 0;
 
     if (conn->stream_error) {
         xmpp_stanza_release(conn->stream_error->stanza);
@@ -1215,6 +1232,12 @@ static void _conn_reset(xmpp_conn_t * const conn)
     conn->secured = 0;
     conn->tls_failed = 0;
     conn->error = 0;
+
+    conn->tls_support = 0;
+    conn->bind_required = 0;
+    conn->session_required = 0;
+
+    handler_system_delete_all(conn);
 }
 
 static int _conn_connect(xmpp_conn_t * const conn,

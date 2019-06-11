@@ -1,7 +1,6 @@
 AUTOMAKE_OPTIONS = subdir-objects
 
 ACLOCAL_AMFLAGS = -I m4
-AM_CFLAGS = -g -Wall
 
 PARSER_CFLAGS=@PARSER_CFLAGS@
 PARSER_LIBS=@PARSER_LIBS@
@@ -11,7 +10,7 @@ SSL_LIBS = @openssl_LIBS@
 
 RESOLV_LIBS = @RESOLV_LIBS@
 
-STROPHE_FLAGS = -I$(top_srcdir)
+STROPHE_FLAGS = -I$(top_srcdir) -Wall -Wextra -Wno-unused-parameter
 STROPHE_LIBS = libstrophe.la
 
 ## Main build targets
@@ -21,14 +20,42 @@ libstrophe_la_CFLAGS = $(SSL_CFLAGS) $(STROPHE_FLAGS) $(PARSER_CFLAGS)
 libstrophe_la_LDFLAGS = $(SSL_LIBS) $(PARSER_LIBS) $(RESOLV_LIBS) -no-undefined
 # Export only public API
 libstrophe_la_LDFLAGS += -export-symbols-regex '^xmpp_'
-libstrophe_la_SOURCES = src/auth.c src/conn.c src/crypto.c src/ctx.c \
-	src/event.c src/handler.c src/hash.c src/jid.c src/md5.c \
-	src/resolver.c src/sasl.c src/scram.c src/sha1.c \
-	src/snprintf.c src/sock.c src/stanza.c src/util.c \
-	src/rand.c src/uuid.c \
-	src/common.h src/hash.h src/md5.h src/ostypes.h src/parser.h \
-	src/resolver.h src/sasl.h src/scram.h src/sha1.h src/snprintf.h \
-	src/sock.h src/tls.h src/util.h src/rand.h
+
+libstrophe_la_SOURCES = \
+	src/auth.c \
+	src/conn.c \
+	src/crypto.c \
+	src/ctx.c \
+	src/event.c \
+	src/handler.c \
+	src/hash.c \
+	src/jid.c \
+	src/md5.c \
+	src/rand.c \
+	src/resolver.c \
+	src/sasl.c \
+	src/scram.c \
+	src/sha1.c \
+	src/snprintf.c \
+	src/sock.c \
+	src/stanza.c \
+	src/util.c \
+	src/uuid.c
+libstrophe_la_SOURCES += \
+	src/common.h \
+	src/hash.h \
+	src/md5.h \
+	src/ostypes.h \
+	src/parser.h \
+	src/rand.h \
+	src/resolver.h \
+	src/sasl.h \
+	src/scram.h \
+	src/sha1.h \
+	src/snprintf.h \
+	src/sock.h \
+	src/tls.h \
+	src/util.h
 
 if DISABLE_TLS
 libstrophe_la_SOURCES += src/tls_dummy.c
@@ -47,19 +74,36 @@ noinst_HEADERS = strophepp.h
 
 pkgconfig_DATA = libstrophe.pc
 
-EXTRA_DIST = docs rpm Doxyfile LICENSE.txt GPL-LICENSE.txt MIT-LICENSE.txt \
-	src/tls_dummy.c src/tls_gnutls.c src/tls_schannel.c \
-	examples/README.md
+EXTRA_DIST = \
+	Doxyfile \
+	GPL-LICENSE.txt \
+	LICENSE.txt \
+	MIT-LICENSE.txt \
+	bootstrap.sh \
+	build-android.sh \
+	docs/footer.html \
+	examples/README.md \
+	jni/Android.mk \
+	jni/Application.mk \
+	rpm/README \
+	rpm/libstrophe.spec \
+	src/tls_gnutls.c \
+	src/tls_schannel.c \
+	tests/res_query_dump.c
 
 ## Examples
-noinst_PROGRAMS = examples/active examples/roster examples/basic examples/bot \
-	examples/component examples/uuid
+noinst_PROGRAMS = \
+	examples/active \
+	examples/basic \
+	examples/bot \
+	examples/component \
+	examples/roster \
+	examples/uuid \
+	examples/vcard
+
 examples_active_SOURCES = examples/active.c
 examples_active_CFLAGS = $(STROPHE_FLAGS)
 examples_active_LDADD = $(STROPHE_LIBS)
-examples_roster_SOURCES = examples/roster.c
-examples_roster_CFLAGS = $(STROPHE_FLAGS)
-examples_roster_LDADD = $(STROPHE_LIBS)
 examples_basic_SOURCES = examples/basic.c
 examples_basic_CFLAGS = $(STROPHE_FLAGS)
 examples_basic_LDADD = $(STROPHE_LIBS)
@@ -69,15 +113,32 @@ examples_bot_LDADD = $(STROPHE_LIBS)
 examples_component_SOURCES = examples/component.c
 examples_component_CFLAGS = $(STROPHE_FLAGS)
 examples_component_LDADD = $(STROPHE_LIBS)
+examples_roster_SOURCES = examples/roster.c
+examples_roster_CFLAGS = $(STROPHE_FLAGS)
+examples_roster_LDADD = $(STROPHE_LIBS)
 examples_uuid_SOURCES = examples/uuid.c
 examples_uuid_CFLAGS = $(STROPHE_FLAGS)
 examples_uuid_LDADD = $(STROPHE_LIBS)
+examples_vcard_SOURCES = examples/vcard.c
+examples_vcard_CFLAGS = $(STROPHE_FLAGS)
+examples_vcard_LDADD = $(STROPHE_LIBS)
 
 
 ## Tests
-TESTS = tests/check_parser tests/test_sha1 tests/test_md5 tests/test_rand \
-	tests/test_scram tests/test_ctx tests/test_base64 tests/test_jid \
-	tests/test_snprintf tests/test_string tests/test_resolver
+TESTS = \
+	tests/check_parser \
+	tests/test_sha1 \
+	tests/test_md5 \
+	tests/test_rand \
+	tests/test_scram \
+	tests/test_ctx \
+	tests/test_base64 \
+	tests/test_hash \
+	tests/test_jid \
+	tests/test_snprintf \
+	tests/test_string \
+	tests/test_resolver
+
 check_PROGRAMS = $(TESTS)
 
 tests_check_parser_SOURCES = tests/check_parser.c tests/test.h
@@ -95,6 +156,11 @@ tests_test_base64_SOURCES = tests/test_base64.c tests/test.c tests/test.h
 tests_test_base64_CFLAGS = $(STROPHE_FLAGS) -I$(top_srcdir)/src
 tests_test_base64_LDADD = $(STROPHE_LIBS)
 tests_test_base64_LDFLAGS = -static
+
+tests_test_hash_SOURCES = tests/test_hash.c
+tests_test_hash_CFLAGS = $(STROPHE_FLAGS) -I$(top_srcdir)/src
+tests_test_hash_LDADD = $(STROPHE_LIBS)
+tests_test_hash_LDFLAGS = -static
 
 tests_test_jid_SOURCES = tests/test_jid.c
 tests_test_jid_CFLAGS = $(STROPHE_FLAGS) -I$(top_srcdir)/src

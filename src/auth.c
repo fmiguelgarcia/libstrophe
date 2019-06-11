@@ -62,6 +62,7 @@
 
 static void _auth(xmpp_conn_t * const conn);
 static void _handle_open_sasl(xmpp_conn_t * const conn);
+static void _handle_open_tls(xmpp_conn_t * const conn);
 
 static int _handle_component_auth(xmpp_conn_t * const conn);
 static int _handle_component_hs_response(xmpp_conn_t * const conn,
@@ -218,6 +219,7 @@ static int _handle_features(xmpp_conn_t * const conn,
 			    void * const userdata)
 {
     xmpp_stanza_t *child, *mech;
+    const char *ns;
     char *text;
 
     /* remove the handler that detects missing stream:features */
@@ -227,8 +229,10 @@ static int _handle_features(xmpp_conn_t * const conn,
     if (!conn->secured) {
         if (!conn->tls_disabled) {
             child = xmpp_stanza_get_child_by_name(stanza, "starttls");
-            if (child && (strcmp(xmpp_stanza_get_ns(child), XMPP_NS_TLS) == 0))
-                conn->tls_support = 1;
+            if (child) {
+                ns = xmpp_stanza_get_ns(child);
+                conn->tls_support = ns != NULL && strcmp(ns, XMPP_NS_TLS) == 0;
+            }
         } else {
             conn->tls_support = 0;
         }
@@ -236,11 +240,15 @@ static int _handle_features(xmpp_conn_t * const conn,
 
     /* check for SASL */
     child = xmpp_stanza_get_child_by_name(stanza, "mechanisms");
-    if (child && (strcmp(xmpp_stanza_get_ns(child), XMPP_NS_SASL) == 0)) {
+    ns = child ? xmpp_stanza_get_ns(child) : NULL;
+    if (child && ns && strcmp(ns, XMPP_NS_SASL) == 0) {
 	for (mech = xmpp_stanza_get_children(child); mech;
 	     mech = xmpp_stanza_get_next(mech)) {
 	    if (xmpp_stanza_get_name(mech) && strcmp(xmpp_stanza_get_name(mech), "mechanism") == 0) {
 		text = xmpp_stanza_get_text(mech);
+                if (text == NULL)
+                    continue;
+
 		if (strcasecmp(text, "PLAIN") == 0)
 		    conn->sasl_support |= SASL_MASK_PLAIN;
 		else if (strcasecmp(text, "DIGEST-MD5") == 0)
@@ -288,7 +296,7 @@ static int _handle_proceedtls_default(xmpp_conn_t * const conn,
         xmpp_debug(conn->ctx, "xmpp", "proceeding with TLS");
 
         if (conn_tls_start(conn) == 0) {
-            conn_prepare_reset(conn, auth_handle_open);
+            conn_prepare_reset(conn, _handle_open_tls);
             conn_open_stream(conn);
         } else {
             /* failed tls spoils the connection, so disconnect */
@@ -315,7 +323,7 @@ static int _handle_sasl_result(xmpp_conn_t * const conn,
 	/* fall back to next auth method */
 	_auth(conn);
     } else if (strcmp(name, "success") == 0) {
-	/* SASL PLAIN auth successful, we need to restart the stream */
+	/* SASL auth successful, we need to restart the stream */
 	xmpp_debug(conn->ctx, "xmpp", "SASL %s auth successful",
 		   (char *)userdata);
 
@@ -564,7 +572,7 @@ static void _auth(xmpp_conn_t * const conn)
     }
 
     if (conn->tls_support) {
-	tls_t *tls = tls_new(conn->ctx, conn->sock);
+	tls_t *tls = tls_new(conn);
 
 	/* If we couldn't init tls, it isn't there, so go on */
 	if (!tls) {
@@ -721,14 +729,11 @@ static void _auth(xmpp_conn_t * const conn)
     } else if (conn->type == XMPP_CLIENT) {
 	/* legacy client authentication */
 
-	iq = xmpp_stanza_new(conn->ctx);
+	iq = xmpp_iq_new(conn->ctx, "set", "_xmpp_auth1");
 	if (!iq) {
 	    disconnect_mem_error(conn);
 	    return;
 	}
-	xmpp_stanza_set_name(iq, "iq");
-	xmpp_stanza_set_type(iq, "set");
-	xmpp_stanza_set_id(iq, "_xmpp_auth1");
 
 	query = xmpp_stanza_new(conn->ctx);
 	if (!query) {
@@ -838,15 +843,23 @@ void auth_handle_open(xmpp_conn_t * const conn)
     /* reset all timed handlers */
     handler_reset_timed(conn, 0);
 
-    /* setup handler for stream:error */
-    handler_add(conn, _handle_error,
-		XMPP_NS_STREAMS, "error", NULL, NULL);
+    /* setup handler for stream:error, we will keep this handler
+     * for reopened streams until connection is disconnected */
+    handler_add(conn, _handle_error, XMPP_NS_STREAMS, "error", NULL, NULL);
 
     /* setup handlers for incoming <stream:features> */
     handler_add(conn, _handle_features,
 		XMPP_NS_STREAMS, "features", NULL, NULL);
-    handler_add_timed(conn, _handle_missing_features,
-		      FEATURES_TIMEOUT, NULL);
+    handler_add_timed(conn, _handle_missing_features, FEATURES_TIMEOUT, NULL);
+}
+
+/* called when stream:stream tag received after TLS establishment */
+static void _handle_open_tls(xmpp_conn_t * const conn)
+{
+    /* setup handlers for incoming <stream:features> */
+    handler_add(conn, _handle_features,
+		XMPP_NS_STREAMS, "features", NULL, NULL);
+    handler_add_timed(conn, _handle_missing_features, FEATURES_TIMEOUT, NULL);
 }
 
 /* called when stream:stream tag received after SASL auth */
@@ -865,7 +878,8 @@ static int _handle_features_sasl(xmpp_conn_t * const conn,
 				 xmpp_stanza_t * const stanza,
 				 void * const userdata)
 {
-    xmpp_stanza_t *bind, *session, *iq, *res, *text;
+    xmpp_stanza_t *bind, *session, *iq, *res, *text, *opt;
+    const char *ns;
     char *resource;
 
     /* remove missing features handler */
@@ -874,16 +888,21 @@ static int _handle_features_sasl(xmpp_conn_t * const conn,
     /* we are expecting <bind/> and <session/> since this is a
        XMPP style connection */
 
+    /* check whether resource binding is required */
     bind = xmpp_stanza_get_child_by_name(stanza, "bind");
-    if (bind && strcmp(xmpp_stanza_get_ns(bind), XMPP_NS_BIND) == 0) {
-	/* resource binding is required */
-	conn->bind_required = 1;
+    if (bind) {
+        ns = xmpp_stanza_get_ns(bind);
+	conn->bind_required = ns != NULL && strcmp(ns, XMPP_NS_BIND) == 0;
     }
 
+    /* check whether session establishment is required */
     session = xmpp_stanza_get_child_by_name(stanza, "session");
-    if (session && strcmp(xmpp_stanza_get_ns(session), XMPP_NS_SESSION) == 0) {
-	/* session establishment required */
-	conn->session_required = 1;
+    if (session) {
+        ns = xmpp_stanza_get_ns(session);
+        opt = xmpp_stanza_get_child_by_name(session, "optional");
+	if (!opt)
+            conn->session_required = ns != NULL &&
+                                     strcmp(ns, XMPP_NS_SESSION) == 0;
     }
 
     /* if bind is required, go ahead and start it */
@@ -896,15 +915,11 @@ static int _handle_features_sasl(xmpp_conn_t * const conn,
 			  BIND_TIMEOUT, NULL);
 
 	/* send bind request */
-	iq = xmpp_stanza_new(conn->ctx);
+	iq = xmpp_iq_new(conn->ctx, "set", "_xmpp_bind1");
 	if (!iq) {
 	    disconnect_mem_error(conn);
 	    return 0;
 	}
-
-	xmpp_stanza_set_name(iq, "iq");
-	xmpp_stanza_set_type(iq, "set");
-	xmpp_stanza_set_id(iq, "_xmpp_bind1");
 
 	bind = xmpp_stanza_copy(bind);
 	if (!bind) {
@@ -1008,20 +1023,17 @@ static int _handle_bind(xmpp_conn_t * const conn,
 			      SESSION_TIMEOUT, NULL);
 
 	    /* send session request */
-	    iq = xmpp_stanza_new(conn->ctx);
+            iq = xmpp_iq_new(conn->ctx, "set", "_xmpp_session1");
 	    if (!iq) {
 		disconnect_mem_error(conn);
 		return 0;
 	    }
 
-	    xmpp_stanza_set_name(iq, "iq");
-	    xmpp_stanza_set_type(iq, "set");
-	    xmpp_stanza_set_id(iq, "_xmpp_session1");
-
 	    session = xmpp_stanza_new(conn->ctx);
 	    if (!session) {
 		xmpp_stanza_release(iq);
 		disconnect_mem_error(conn);
+                return 0;
 	    }
 
 	    xmpp_stanza_set_name(session, "session");
