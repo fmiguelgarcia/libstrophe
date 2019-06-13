@@ -23,7 +23,8 @@ class LibStropheConan(ConanFile):
 
     def package(self):
         self.copy( pattern="strophe*.h", dst="include/", keep_path=True)
-        self.copy( pattern="**/libstrophe.*", src="build", dst="lib/", keep_path=False, symlinks=True)
+        self.copy( pattern="**/libstrophe.*", dst="lib/", keep_path=False, symlinks=True)
+        self.copy( pattern="**/strophe.*", dst="lib/", keep_path=False, symlinks=True)
 
     def package_info(self):
-        self.cpp_info.libs.extend(["strophe"])
+        self.cpp_info.libs.extend(["strophe", "winmm"])
