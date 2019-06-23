@@ -54,12 +54,9 @@ if( ${WITH_EXAMPLES})
 	add_subdirectory( examples)
 endif()
 
-	
-
-
 # Link
 add_definitions()
-add_library( strophe STATIC ${strophe_SRCS})
+add_library( strophe SHARED ${strophe_SRCS})
 if(MSVC)
 	target_link_libraries( strophe winmm.lib ${CONAN_LIBS})
 else()
