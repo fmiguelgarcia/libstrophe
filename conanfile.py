@@ -10,7 +10,7 @@ class LibStropheConan(ConanFile):
     settings = "os", "compiler", "build_type", "arch"
     generators = "cmake"
     requires = "expat/2.2.0@dmious/stable", "OpenSSL/1.1.1c@conan/stable"
-    exports_sources = "CMakeLists.txt", "src/*", "tests/*", "examples/*", "*.h"
+    exports_sources = "CMakeLists.txt", "src/*", "tests/*", "examples/*", "*.h", "strophe.def"
     options = { "with_tests": [True, False], "with_examples": [True, False]}
     default_options = "with_tests=False", "with_examples=False"
 
@@ -24,9 +24,9 @@ class LibStropheConan(ConanFile):
     def package(self):
         self.copy( pattern="strophe*.h", dst="include/", keep_path=True)
         self.copy( pattern="**/libstrophe.so*", dst="lib/", keep_path=False, symlinks=True)
-        self.copy( pattern="**/libstrophe.dll", dst="lib/", keep_path=False, symlinks=True)
         self.copy( pattern="**/strophe.so*", dst="lib/", keep_path=False, symlinks=True)
-        self.copy( pattern="**/strophe.dll", dst="lib/", keep_path=False, symlinks=True)
+        self.copy( pattern="strophe.*", src="bin", dst="bin", keep_path=False, symlinks=True)
+        self.copy( pattern="strophe.*", src="lib", dst="lib", keep_path=False, symlinks=True)
 
     def package_info(self):
         if self.settings.os == "Windows":

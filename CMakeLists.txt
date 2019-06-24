@@ -42,6 +42,7 @@ set( strophe_SRCS
 	src/tls_openssl.c
 	src/util.c src/util.h
 	src/uuid.c
+	strophe.def
 )
 
 # Test and examples
