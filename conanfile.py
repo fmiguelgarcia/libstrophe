@@ -9,7 +9,7 @@ class LibStropheConan(ConanFile):
     url = "http://strophe.im/libstrophe"
     settings = "os", "compiler", "build_type", "arch"
     generators = "cmake"
-    requires = "expat/2.2.0@dmious/stable", "OpenSSL/1.1.1c@conan/stable"
+    requires = "expat/2.2.0@dmious/stable", "OpenSSL/1.1.1b@conan/stable"
     exports_sources = "CMakeLists.txt", "src/*", "tests/*", "examples/*", "*.h", "strophe.def"
     options = { "with_tests": [True, False], "with_examples": [True, False]}
     default_options = "with_tests=False", "with_examples=False"
